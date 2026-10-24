@@ -91,8 +91,12 @@ def generate(anonymized_text: str, task: str) -> str:
             if exc.code in (429, 500, 503) and attempt < 2:
                 time.sleep(2 * (attempt + 1))
                 continue
-            log.warning("Gemini HTTP %s", exc.code)
-            raise AIError("The AI service rejected the request. Please retry later.") from exc
+            try:
+                detail = json.load(exc.fp).get("error", {}).get("message", "")[:200]
+            except Exception:
+                detail = ""
+            log.warning("Gemini HTTP %s %s", exc.code, detail)
+            raise AIError(f"AI service error {exc.code}: {detail or 'request rejected'}") from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             if attempt < 2:
                 time.sleep(2)
