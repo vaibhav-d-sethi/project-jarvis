@@ -60,10 +60,22 @@ def connection() -> Iterator[pymysql.connections.Connection]:
 
 
 def ensure_schema() -> None:
-    """Create tables if they do not exist (idempotent)."""
+    """Create tables if missing and upgrade ones left by the old JARVIS version."""
     statements = [s.strip() for s in _SCHEMA.read_text(encoding="utf-8").split(";")]
     with connection() as conn, conn.cursor() as cur:
         for stmt in statements:
             body = "\n".join(l for l in stmt.splitlines() if not l.strip().startswith("--")).strip()
             if body:
                 cur.execute(body)
+        cur.execute(
+            "SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='user_files'"
+        )
+        cols = {r["c"] for r in cur.fetchall()}
+        if "task" not in cols:
+            cur.execute(
+                "ALTER TABLE user_files ADD COLUMN task "
+                "ENUM('revision_notes','quiz_generation') NOT NULL DEFAULT 'revision_notes'"
+            )
+        if "error_message" not in cols:
+            cur.execute("ALTER TABLE user_files ADD COLUMN error_message VARCHAR(500) NULL")
